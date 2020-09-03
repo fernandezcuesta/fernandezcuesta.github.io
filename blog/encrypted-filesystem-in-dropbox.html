@@ -1,0 +1,92 @@
+<!doctype html>
+<html class="no-js" lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-type" content="text/html; charset=utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>sys$notes &middot; Encrypted filesystem in&nbsp;Dropbox</title><link rel="shortcut icon" href="./theme/images/favicon.ico" type="image/x-icon"><meta name="author" content="J.M. Fernández"><script async src="./theme/js/jquery.min.js"></script><script async src="./theme/js/bootstrap.min.js"></script><script async src="./theme/js/respond.min.js"></script><script async src="./theme/js/modernizr-2.8.3-respond-1.4.2.min.js"></script></head><body><!--[if lt IE 8]>
+    <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
+  <![endif]--><nav class="navbar navbar-static-top"><div class="navbar-header"><button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse"><span class="sr-only">Toggle navigation</span><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button></div><div class="navbar-collapse collapse"><header><div class="col-xs-5 col-md-6 col-lg-6 header_box"><ul><li class="headsubtitle">yet another personal blog</li><li class="headtitle"><a href="."><img src="./theme/images/title.png" alt="sys$notes"></a></li></ul></div><div class="col-xs-6 col-md-5 col-lg-5 header_controls"><ul id="nav"><li><a href=".">Home</a></li><li><a href="./archives.html">Archives</a></li><li><a href="https://about.me/fernandez.cuesta">About</a></li><li><a class="social" href="https://plus.google.com/+JMFernándezC"><i class="fa fa-google-plus-square fa-2x" title="google-plus"></i></a><a class="social" href="https://github.com/fernandezcuesta/"><i class="fa fa-github-square fa-2x" title="github"></i></a></li></ul><div class="row navbar-header navbar-right" id="searchbox"><form action="search.html"><input type="search" name="q" id="tipue_search_input" autocomplete="off" required placeholder="search" autofocus></form></div></div></header></div></nav><div class="container"><div id="content"><div class="row post"><aside class="izquierda col-xs-2 col-md-2 col-lg-2"><div class="date"><div class="dateday">27 Mar</div><div class="datemonth">2015</div></div><div class="tags"><ul><li><a href="./tag/linux.html">linux</a></li><li><a href="./tag/internet.html">internet</a></li><li><a href="./tag/security.html">security</a></li></ul></div></aside><article class="derecha col-xs-10 col-md-10 col-lg-10"><header><h1 class="title"><a href="javascript:javascript:history.go(-1)" rel="bookmark" title="Encrypted filesystem in Dropbox">Encrypted filesystem in&nbsp;Dropbox</a></h1></header><section class="post_content"><p>The idea is to set up a container where we can put private/secret files. A way to achieve this is setting up <strong><span class="caps">LUKS</span></strong> on top of a fix-length file, i.e. <code>~/Dropbox/private.img</code>.</p><h2>Initialization:</h2><ul><li><p>Initialize a (for example) <span class="caps">100MB</span>&nbsp;file:</p><div class="highlight"><pre><span></span>$ dd <span class="k">if</span><span class="o">=</span>/dev/urandom <span class="nv">of</span><span class="o">=</span>/tmp/private.img <span class="nv">bs</span><span class="o">=</span>1M <span class="nv">count</span><span class="o">=</span>100
+</pre></div></li><li><p>Give format to the container while setting a&nbsp;passphrase:</p><div class="highlight"><pre><span></span>$ cryptsetup luksFormat /tmp/private.img
+$ sudo cryptsetup open /tmp/private.img private
+$ sudo mkfs.ext4 -L Private /dev/mapper/private
+</pre></div></li><li><p>Mount and copy files to&nbsp;it</p><div class="highlight"><pre><span></span>$ mkdir /tmp/private
+$ sudo mount /dev/mapper/private /tmp/private
+$ sudo chown -R <span class="sb">`</span>whoami<span class="sb">`</span> /tmp/priv
+$ cp ~/my_private_files/* /tmp/private
+</pre></div></li><li><p>Dismount and move the container to its final&nbsp;location:</p><div class="highlight"><pre><span></span>$ sudo umount /tmp/private
+$ sudo cryptsetup luksClose private
+$ mv /tmp/private.img ~/Dropbox/private.img
+</pre></div></li></ul><h2>Configuration:</h2><p>For this to be shown as a device, we can do the&nbsp;following:</p><h3>Option 1: using <code>/etc/rc.local</code> systemd&nbsp;compatibility</h3><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre> 1
+ 2
+ 3
+ 4
+ 5
+ 6
+ 7
+ 8
+ 9
+10
+11
+12
+13</pre></div></td><td class="code"><div class="highlight"><pre><span></span><span class="ch">#!/bin/bash</span>
+<span class="nv">IMG_LOCATION</span><span class="o">=</span>/home/user/Dropbox/private.img
+<span class="k">case</span> <span class="nv">$1</span> in
+ start<span class="o">)</span>
+ <span class="c1"># start script</span>
+ losetup --find --show <span class="nv">$IMG_LOCATION</span>
+ <span class="p">;;</span>
+ stop<span class="o">)</span>
+ <span class="c1"># stop script</span>
+ losetup -d <span class="sb">`</span>losetup <span class="p">|</span> grep -Po <span class="s2">&quot;.+(?=(\s+\d){4}.*</span><span class="nv">$IMG_LOCATION</span><span class="s2">)&quot;</span><span class="sb">`</span>
+ <span class="p">;;</span>
+<span class="k">esac</span>
+<span class="nb">exit</span>
+</pre></div></td></tr></table><p>To start this on every boot&nbsp;do:</p><div class="highlight"><pre><span></span>$ sudo chmod +x /etc/rc.local
+</pre></div><p>And ensure the unit file for <code>rc.local</code> compatibility (<code>/etc/systemd/system/rc-local.service</code>) is enabled and&nbsp;contains:</p><div class="highlight"><pre><span></span><span class="o">[</span>Unit<span class="o">]</span>
+<span class="nv">Description</span><span class="o">=</span>/etc/rc.local Compatibility
+<span class="nv">ConditionPathExists</span><span class="o">=</span>/etc/rc.local
+
+<span class="o">[</span>Service<span class="o">]</span>
+<span class="nv">Type</span><span class="o">=</span>forking
+<span class="nv">ExecStart</span><span class="o">=</span>/etc/rc.local start
+<span class="nv">ExecStop</span><span class="o">=</span>/etc/rc.local stop
+<span class="nv">TimeoutSec</span><span class="o">=</span>0
+<span class="nv">StandardOutput</span><span class="o">=</span>tty
+<span class="nv">RemainAfterExit</span><span class="o">=</span>yes
+<span class="nv">SysVStartPriority</span><span class="o">=</span>99
+
+<span class="o">[</span>Install<span class="o">]</span>
+<span class="nv">WantedBy</span><span class="o">=</span>multi-user.target
+</pre></div><h3>Option 2: systemd&nbsp;unit</h3><p>Create a systemd user unit file as follows under <code>/etc/systemd/system</code>, for example <code>/etc/systemd/system/mountloop.service</code>:</p><div class="highlight"><pre><span></span><span class="o">[</span>Unit<span class="o">]</span>
+<span class="nv">Description</span><span class="o">=</span>Mount loop device
+<span class="nv">DefaultDependencies</span><span class="o">=</span>no
+<span class="nv">Conflicts</span><span class="o">=</span>umount.target
+<span class="nv">After</span><span class="o">=</span>local-fs.target
+
+
+<span class="o">[</span>Service<span class="o">]</span>
+<span class="nv">Type</span><span class="o">=</span>forking
+<span class="nv">Environment</span><span class="o">=</span><span class="s2">&quot;IMG_LOCATION=/home/user/Dropbox/private.img&quot;</span>
+<span class="nv">ExecStart</span><span class="o">=</span>/usr/sbin/losetup --find --show <span class="si">${</span><span class="nv">IMG_LOCATION</span><span class="si">}</span>
+<span class="nv">ExecStop</span><span class="o">=</span>/bin/bash -c <span class="s2">&quot;/usr/sbin/losetup -d `losetup | grep -Po \&quot;.+(?=(\s+\d){4}.*</span><span class="si">${</span><span class="nv">IMG_LOCATION</span><span class="si">}</span><span class="s2">)\&quot;`&quot;</span>
+<span class="nv">TimeoutSec</span><span class="o">=</span>0
+<span class="nv">RemainAfterExit</span><span class="o">=</span>yes
+
+<span class="o">[</span>Install<span class="o">]</span>
+<span class="nv">WantedBy</span><span class="o">=</span>default.target
+</pre></div><p>Then enable this unit&nbsp;file:</p><div class="highlight"><pre><span></span>$ sudo systemctl daemon-reload
+$ sudo systemctl <span class="nb">enable</span> mountloop
+$ sudo systemctl start mountloop
+</pre></div></section><footer><div class="clear"></div><div class="row"><div class="col-xs-3 col-md-2 col-lg-2 archives izquierda"></div><div class="col-xs-8 col-md-9 col-lg-9 post archives"><a class="more" href="javascript:javascript:history.go(-1)">&#8672;&nbsp;BACK&nbsp;&#8672;</a></div></div></footer></article></div><div class="comments"><div class="row post"><div class="col-xs-10 col-md-10 col-lg-10 comments_content comments_header"><h2>Leave your comments:</h2></div><div class="col-xs-2 col-md-2 col-lg-2 comments_corner"></div></div><div class="row flex-row"><div class="col-xs-10 col-md-10 col-lg-10 comments_content"><div id="disqus_thread"><script type="text/javascript">
+                       var disqus_identifier = "encrypted-filesystem-in-dropbox.html";
+                       (function() {
+                       var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+                       dsq.src = 'http://vt100.disqus.com/embed.js';
+                       (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+                      })();
+                    </script></div></div><div class="comments_side"></div></div></div><div class="spacer"></div><div class="clear"></div></div><footer class="row"><div class="license_img"><a rel="license" href="http://creativecommons.org/licenses/by/4.0/"><img alt="Creative Commons Attribution 4.0 International License" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png"></a></div><div class="license"><div><span xmlns:dct="http://purl.org/dc/terms/" property="dct:title"><strong>sys$notes</strong></span> is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a></div><div><p>Proudly powered by <a href="http://getpelican.com">Pelican</a>&nbsp;&middot;&nbsp;Calepin theme</p></div></div></footer><div class="clear"></div></div><script>
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-56464775-1', 'auto');  // Replace with your property ID.
+ga('send', 'pageview');
+
+</script></body><link rel="stylesheet" href="./theme/css/bootstrap.min.css" type="text/css"><link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css"><link rel="stylesheet" href="./theme/css/calepin.min.css?792686df"></html>
